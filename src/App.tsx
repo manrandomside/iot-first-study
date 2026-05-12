@@ -1,14 +1,56 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 import { Thermometer, Sun, ShieldAlert, ShieldCheck, Shield } from 'lucide-react';
 
 export default function App() {
-  // Mock Data State
-  const [data] = useState({
-    suhu: 32.5,
-    cahaya: 850,
-    status: 'BAHAYA', // AMAN, WASPADA, BAHAYA
-    isConnected: true
+  // State
+  const [data, setData] = useState({
+    suhu: 0,
+    cahaya: 0,
+    status: 'MENUNGGU', // AMAN, WASPADA, BAHAYA, MENUNGGU
+    isConnected: false
   });
+
+  // MQTT Connection Setup
+  useEffect(() => {
+    const client = mqtt.connect('wss://mqtt-dashboard.com:8884/mqtt');
+
+    client.on('connect', () => {
+      setData(prev => ({ ...prev, isConnected: true }));
+      client.subscribe('firman/satpam_pintar/sensor');
+    });
+
+    client.on('message', (topic, payload) => {
+      if (topic === 'firman/satpam_pintar/sensor') {
+        try {
+          const messageStr = payload.toString();
+          const parsedData = JSON.parse(messageStr);
+          
+          setData(prev => ({
+            ...prev,
+            suhu: parsedData.suhu ?? prev.suhu,
+            cahaya: parsedData.cahaya ?? prev.cahaya,
+            status: parsedData.status ?? prev.status
+          }));
+        } catch (error) {
+          console.error('Invalid JSON payload');
+        }
+      }
+    });
+
+    client.on('error', () => {
+      setData(prev => ({ ...prev, isConnected: false }));
+    });
+
+    client.on('close', () => {
+      setData(prev => ({ ...prev, isConnected: false }));
+    });
+
+    // Cleanup
+    return () => {
+      client.end();
+    };
+  }, []);
 
   const getStatusStyles = (status: string) => {
     switch (status) {
